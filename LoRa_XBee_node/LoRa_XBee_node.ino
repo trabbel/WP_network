@@ -41,7 +41,7 @@ LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 DeviceClass_t  loraWanClass = CLASS_C;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 1000;
+uint32_t appTxDutyCycle = 1000 * 10;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = true;
@@ -86,17 +86,42 @@ static void prepareTxFrame(int mode, uint8_t port )
   *for example, if use REGION_CN470, 
   *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
   */ 
-    if(mode == 0){
+    if(mode == -1){
       appDataSize = 4;
       appData[0] = 0x00;
       appData[1] = 0x01;
       appData[2] = 0x02;
       appData[3] = 0x03;
     }else{
-      appDataSize=2;
-      appData[0] = 0x11;
-      appData[1] = 0x22;
+      appDataSize=1;
+      appData[0] = mode;
     }
+}
+
+
+uint64_t sink_addr = 0x0013a20041f223b8;
+
+
+void downLinkDataHandle(McpsIndication_t *mcpsIndication){
+  Serial.printf("+REV DATA:%s,RXSIZE %d,PORT %d\r\n",mcpsIndication->RxSlot?"RXWIN2":"RXWIN1",mcpsIndication->BufferSize,mcpsIndication->Port);
+  Serial.print("+REV DATA:");
+  uint8_t identifier = mcpsIndication->Buffer[0];
+  Serial.printf("identifier: %02x\n", identifier);
+  if (identifier == 0x00){
+    sink_addr = 0;
+    for(uint8_t i=1;i<mcpsIndication->BufferSize;i++){
+      sink_addr |= (uint64_t)mcpsIndication->Buffer[i] << ((8-i)*8);
+    }
+
+  }
+    for(uint8_t i=0;i<mcpsIndication->BufferSize;i++)
+    {
+      Serial.printf("%02X",mcpsIndication->Buffer[i]);
+    }
+    Serial.println();
+  
+
+
 }
 
 
@@ -105,7 +130,6 @@ static void prepareTxFrame(int mode, uint8_t port )
 char tx_buf[MAXIMUM_BUFFER_SIZE] = {0};
 char rx_buf[MAXIMUM_BUFFER_SIZE] = {0};
 int tx_length = 0;
-uint64_t sink_addr = 0x0013a20041f223b8;
 
 // Delays for software-"multithreading"/scheduling
 millisDelay sendDelay;
@@ -114,6 +138,7 @@ millisDelay sendDelay;
 
 
 bool send_status = false;
+int zigbeeFailed = 0;
 
 /*
 ############ TODO #############
@@ -151,8 +176,7 @@ static void rx_callback(char *buffer){
             Serial.printf("%.*s\n", length - 12, buffer + 12);
         }else if(result.frameID == 0x8b){
           if(buffer[5] != 0x00){
-            prepareTxFrame(1, appPort );
-            send_status = true;
+            zigbeeFailed++;
           }
         }
     }
@@ -214,10 +238,11 @@ switch( deviceState )
     }
     case DEVICE_STATE_SEND:
     {
-      if(send_status == true){
-      //prepareTxFrame(0, appPort );
+      //if(send_status == true){
+      prepareTxFrame(zigbeeFailed, appPort );
+      zigbeeFailed = 0;
       LoRaWAN.send();
-      send_status = false;}
+      //send_status = false;}
       deviceState = DEVICE_STATE_CYCLE;
       break;
     }
