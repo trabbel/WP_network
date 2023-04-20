@@ -213,7 +213,7 @@ void sendMessage() {
   if (sendDelay.justFinished()) {
     sendDelay.repeat();
     Serial.printf("Send message\n");
-    char payload[] = "Zigbee_LoRa";
+    char payload[] = "L";
     tx_length = writeFrame(tx_buf, 0x01, 0xFFFE, sink_addr, payload, sizeof(payload)-1);
     xbee.write(tx_buf, tx_length);
   }
