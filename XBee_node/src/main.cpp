@@ -118,7 +118,7 @@ void sendMessage() {
   if (sendDelay.justFinished()) {
     sendDelay.repeat();
     Serial.printf("Send message\n");
-    char payload[] = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata";
+    char payload[] = "X";
     tx_length = writeFrame(tx_buf, 0x01, 0xFFFE, sink_addr, payload, sizeof(payload)-1);
     xbee.write(tx_buf, tx_length);
   }
