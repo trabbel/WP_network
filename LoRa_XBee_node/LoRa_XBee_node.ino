@@ -41,7 +41,7 @@ LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 DeviceClass_t  loraWanClass = CLASS_C;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 1000 * 10;
+uint32_t appTxDutyCycle = 1000 * 30;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = true;
@@ -98,8 +98,17 @@ static void prepareTxFrame(int mode, uint8_t port )
     }
 }
 
-
+// Define RX and TX global buffer
+char tx_buf[MAXIMUM_BUFFER_SIZE] = {0};
+char rx_buf[MAXIMUM_BUFFER_SIZE] = {0};
+int tx_length = 0;
 uint64_t sink_addr = 0x0013a20041f223b8;
+int zigbeeFailed = 0;
+
+
+// Delays for software-"multithreading"/scheduling
+millisDelay sendDelay;
+int measurement_interval = 5000;
 
 
 void downLinkDataHandle(McpsIndication_t *mcpsIndication){
@@ -107,18 +116,31 @@ void downLinkDataHandle(McpsIndication_t *mcpsIndication){
   Serial.print("+REV DATA:");
   uint8_t identifier = mcpsIndication->Buffer[0];
   Serial.printf("identifier: %02x\n", identifier);
+  sendDelay.stop();
   if (identifier == 0x00){
+
     sink_addr = 0;
-    for(uint8_t i=1;i<mcpsIndication->BufferSize;i++){
+    for(int i=1;i<mcpsIndication->BufferSize;i++){
       sink_addr |= (uint64_t)mcpsIndication->Buffer[i] << ((8-i)*8);
     }
-
-  }
+    tx_length = writeFrame(tx_buf, 0x01, 0xFFFF, 0xFFFFFFFFFFFFFFFF, (char*)mcpsIndication->Buffer, mcpsIndication->BufferSize);
+    xbee.write(tx_buf, tx_length);
+    zigbeeFailed = 0;
+  }else if(identifier == 0x01){
+    measurement_interval = 0;
+    for(int i=1;i<mcpsIndication->BufferSize;i++){
+      measurement_interval |= (int)mcpsIndication->Buffer[i] << ((4-i)*8);
+    }
+    tx_length = writeFrame(tx_buf, 0x01, 0xFFFF, 0xFFFFFFFFFFFFFFFF, (char*)mcpsIndication->Buffer, mcpsIndication->BufferSize);
+    xbee.write(tx_buf, tx_length);
+    }else{
     for(uint8_t i=0;i<mcpsIndication->BufferSize;i++)
     {
       Serial.printf("%02X",mcpsIndication->Buffer[i]);
     }
     Serial.println();
+    }
+    sendDelay.start(measurement_interval);
   
 
 
@@ -126,19 +148,7 @@ void downLinkDataHandle(McpsIndication_t *mcpsIndication){
 
 
 
-// Define RX and TX global buffer
-char tx_buf[MAXIMUM_BUFFER_SIZE] = {0};
-char rx_buf[MAXIMUM_BUFFER_SIZE] = {0};
-int tx_length = 0;
-
-// Delays for software-"multithreading"/scheduling
-millisDelay sendDelay;
-
-
-
-
 bool send_status = false;
-int zigbeeFailed = 0;
 
 /*
 ############ TODO #############
@@ -183,13 +193,10 @@ static void rx_callback(char *buffer){
     return;
 }
 
-int i =0;
 void setup() {
-  i++;
     Serial.begin(115200);
     xbee.begin(115200, SERIAL_8N1, 12, 13);
     digitalWrite(15, LOW); 
-  Serial.printf("Setup loop number %d \n", i);
   convert_keystring();
     Mcu.begin();
   deviceState = DEVICE_STATE_INIT;
@@ -197,7 +204,7 @@ void setup() {
     delay(100);
     digitalWrite(15, HIGH); 
     delay(100);
-    sendDelay.start(5000);
+    sendDelay.start(measurement_interval);
     Serial.printf("Setup finished-------------------------------------------------------------------------------------------------------------\n");
 }
 
@@ -205,7 +212,7 @@ void setup() {
 void sendMessage() {
   if (sendDelay.justFinished()) {
     sendDelay.repeat();
-    //Serial.printf("Send message\n");
+    Serial.printf("Send message\n");
     char payload[] = "Zigbee_LoRa";
     tx_length = writeFrame(tx_buf, 0x01, 0xFFFE, sink_addr, payload, sizeof(payload)-1);
     xbee.write(tx_buf, tx_length);
